@@ -157,7 +157,7 @@ function enterNumber(n){
     // 正解数字を入力したら、同じ行・列・3x3ブロック内の同じ数字のメモだけを消す
     if(game.board[r][c]===game.solution[r][c]){
       for(let i=0;i<81;i++){
-        if(i===idx) continue;
+        if(i===selected) continue;
         const rr=Math.floor(i/9), cc=i%9;
         const sameRow=rr===r, sameCol=cc===c;
         const sameBox=Math.floor(rr/3)===Math.floor(r/3)&&Math.floor(cc/3)===Math.floor(c/3);
