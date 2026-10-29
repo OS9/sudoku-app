@@ -7,6 +7,8 @@ const THEME = "sudoku-theme-v1";
 const REMOVE = {easy:38, medium:48, hard:55};
 const DIFF_NAMES = {easy:"初級",medium:"中級",hard:"上級"};
 let game = null, selected = 40, noteMode = false, undoStack = [], startedAt = 0, elapsedBefore = 0, timerId = null, toastTimer = null;
+let lastCellTap = {index: -1, time: 0}, lastTouchModeToggleAt = 0;
+function toggleNoteMode(){noteMode=!noteMode;$("notesBtn").setAttribute("aria-pressed",String(noteMode));setMessage(noteMode?"メモモード：数字を選択":"通常入力モード：数字を選択");save();}
 
 function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 function pattern(r,c){return (r*3+Math.floor(r/3)+c)%9;}
@@ -102,7 +104,32 @@ function render(){
     if(conflictSet.has(i)&&!game.initial[r][c])cell.classList.add("conflict");
     if(v){cell.append(document.createTextNode(v));}
     else if(game.notes[i]?.length){const note=document.createElement("span");note.className="notes";for(let n=1;n<=9;n++){const s=document.createElement("span");s.textContent=game.notes[i].includes(n)?n:"";note.append(s);}cell.append(note);}
-    cell.disabled=game.finished;cell.addEventListener("click",()=>{selected=i;render();save();});board.append(cell);
+    cell.disabled=game.finished;
+    cell.addEventListener("click",()=>{selected=i;render();save();});
+    // iPhoneなどのタッチ端末では同じマスを素早く2回タップすると入力モードを切り替える。
+    cell.addEventListener("touchend",(event)=>{
+      if(game.finished)return;
+      const now=Date.now();
+      if(lastCellTap.index===i && now-lastCellTap.time<380){
+        event.preventDefault();
+        selected=i;
+        lastCellTap={index:-1,time:0};
+        toggleNoteMode();
+        lastTouchModeToggleAt=now;
+        render();
+      }else{
+        lastCellTap={index:i,time:now};
+      }
+    },{passive:false});
+    cell.addEventListener("dblclick",(event)=>{
+      event.preventDefault();
+      // タッチ操作で切り替え済みなら、後続のdblclickで二重反転させない。
+      if(Date.now()-lastTouchModeToggleAt<500)return;
+      selected=i;
+      toggleNoteMode();
+      render();
+    });
+    board.append(cell);
   }
   const digits=$("digits");digits.innerHTML="";
   for(let n=1;n<=9;n++){const b=document.createElement("button");b.className="digit";b.textContent=n;b.type="button";
@@ -127,7 +154,18 @@ function enterNumber(n){
     game.board[r][c]=n;
     if(n!==game.solution[r][c]){game.mistakes++;setMessage("正解と違う数字です");}
     else setMessage("いい調子！");
-    if(game.board[r][c]===game.solution[r][c])for(let i=0;i<81;i++)game.notes[i]=(game.notes[i]||[]).filter(x=>x!==n);
+    // 正解数字を入力したら、同じ行・列・3x3ブロック内の同じ数字のメモだけを消す
+    if(game.board[r][c]===game.solution[r][c]){
+      for(let i=0;i<81;i++){
+        if(i===idx) continue;
+        const rr=Math.floor(i/9), cc=i%9;
+        const sameRow=rr===r, sameCol=cc===c;
+        const sameBox=Math.floor(rr/3)===Math.floor(r/3)&&Math.floor(cc/3)===Math.floor(c/3);
+        if(sameRow||sameCol||sameBox){
+          game.notes[i]=(game.notes[i]||[]).filter(x=>x!==n);
+        }
+      }
+    }
     if(game.board.every((row,y)=>row.every((v,x)=>v===game.solution[y][x]))){finishGame();}
   }
   render();save();
@@ -164,7 +202,7 @@ $("newGame").addEventListener("click",()=>{if(game&&!game.finished)$("confirmDia
 $("confirmNew").addEventListener("click",()=>{$("confirmDialog").close();freshGame($("difficulty").value);});
 $("cancelNew").addEventListener("click",()=>$("confirmDialog").close());
 $("difficulty").addEventListener("change",()=>{if(game&&!game.finished){$("confirmDialog").showModal();}else freshGame($("difficulty").value);});
-$("notesBtn").addEventListener("click",()=>{noteMode=!noteMode;$("notesBtn").setAttribute("aria-pressed",String(noteMode));setMessage(noteMode?"候補数字メモ：数字を選択":"通常入力モード");save();});
+$("notesBtn").addEventListener("click",toggleNoteMode);
 $("undoBtn").addEventListener("click",undo);$("eraseBtn").addEventListener("click",erase);$("hintBtn").addEventListener("click",hint);
 $("recordsBtn").addEventListener("click",showRecords);$("closeRecords").addEventListener("click",()=>$("recordsDialog").close());
 $("clearRecords").addEventListener("click",()=>{if(confirm("クリア記録をすべて削除しますか？")){localStorage.removeItem(RECORDS);showRecords();render();}});
